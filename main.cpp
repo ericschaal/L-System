@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
-#include <time.h>
 
 
 using namespace std;
@@ -14,7 +13,7 @@ struct customTuple;
 void printList(std::list<char>* l);
 void gen(list<char> *l, function<void(vector<customTuple>*,int, char)> rule);
 function<void(vector<customTuple>*,int, char)> getRule(int index);
-
+char getStartString(int i);
 
 double start, finish;
 double elapsed;
@@ -30,22 +29,26 @@ struct customTuple {
 };
 
 
-int main() {
+int main(int argc, char *argv[]) {
 
-    int n = 8;
+    if (argc != 4)
+        return 1;
 
-    omp_set_num_threads(1);
+    int n = atoi(argv[1]);
+    int m = atoi(argv[3]);
+    int g = atoi(argv[2]);
 
+
+    omp_set_num_threads(n);
 
     list<char> *l = new list<char>();
+    l->insert(l->begin(), getStartString(m)); // adding first char.
 
-    l->insert(l->begin(), 'a');
+    start = omp_get_wtime(); // starting timer
 
-    start = omp_get_wtime();
-
-    for (int i = 0; i < 4; i++) {
-        gen(l, getRule(2));
-        printList(l);
+    for (int i = 0; i < g; i++) { // generation loop
+        gen(l, getRule(m)); // generate new string
+        printList(l); // print new string
     }
 
     finish = omp_get_wtime();
@@ -67,6 +70,8 @@ char getStartString(int i) {
             return 'a';
         case 4:
             return 'b';
+        default:
+            return 'a';
     }
 }
 
@@ -145,21 +150,6 @@ function<void(vector<customTuple>*,int, char)> getRule(int index) {
     }
 }
 
-void rule(vector<customTuple>* l,int index, char c) {
-    if (c == 'a') {
-        list<char> k;
-        k.push_back('a');
-        k.push_back('b');
-        l->push_back(customTuple(index, k));
-    }
-    else if (c == 'b') {
-        list<char> k;
-        k.push_back('b');
-        k.push_back('a');
-        l->push_back(customTuple(index, k));
-    }
-}
-
 
 void gen(list<char> *l, function<void(vector<customTuple>*,int, char)> rule) {
     vector<customTuple> priv = vector<customTuple>();
@@ -167,10 +157,10 @@ void gen(list<char> *l, function<void(vector<customTuple>*,int, char)> rule) {
     #pragma omp declare reduction (merge: vector<customTuple> : omp_out.insert(omp_out.end(), omp_in.begin(), omp_in.end()))
 
     #pragma omp parallel for reduction(merge: priv)
-    for (int i = 0; i < l->size(); i++) {
+    for (uint i = 0; i < l->size(); i++) {
         auto it = l->begin();
 
-        for (int j = 1; j <= i; j++)
+        for (uint j = 1; j <= i; j++)
             it++;
         rule(&priv, i, *it);
     }
