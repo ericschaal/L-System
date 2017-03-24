@@ -31,8 +31,15 @@ struct customTuple {
 
 int main(int argc, char *argv[]) {
 
-    if (argc != 4)
-        return 1;
+    if (argc != 4) {
+        cout << "usage ./Ass4 n g m" << endl << endl;
+        cout << "n: max number of threads" << endl;
+        cout << "g: generation count" << endl;
+        cout << "m: rule number [1..4]" << endl;
+        exit(EXIT_FAILURE);
+    }
+
+
 
     int n = atoi(argv[1]);
     int m = atoi(argv[3]);
@@ -54,9 +61,12 @@ int main(int argc, char *argv[]) {
     finish = omp_get_wtime();
     elapsed = (finish - start);
 
+    cout << endl;
     printf("Time taken: %.2fs\n", elapsed);
 
     delete(l);
+
+    return EXIT_SUCCESS;
 
 }
 
