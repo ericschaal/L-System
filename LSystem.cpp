@@ -163,7 +163,6 @@ function<void(vector<customTuple>*,int, char)> getRule(int index) {
 
 void gen(list<char> *l, function<void(vector<customTuple>*,int, char)> rule) {
     vector<customTuple> priv = vector<customTuple>();
-
     #pragma omp declare reduction (merge: vector<customTuple> : omp_out.insert(omp_out.end(), omp_in.begin(), omp_in.end()))
 
     #pragma omp parallel for reduction(merge: priv)

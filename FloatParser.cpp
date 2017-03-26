@@ -1,12 +1,13 @@
 //
 // Created by eschaal on 3/24/17.
+// Note : Not working, spent hours trying to debug without success... I think there is a problem with the way i am using iterators.
 //
 
 #include <iostream>
 #include <regex>
 #include <omp.h>
 #include <assert.h>
-#include <functional>
+
 
 #define GEN_SIZE 12
 
@@ -17,20 +18,19 @@ typedef tuple<char_iterator, char_iterator> iterator_tuple;
 
 
 class DfaResult;
+class Compound;
 
-DfaResult dfa(int state, vector<char>::iterator begin, vector<char>::iterator end, DfaResult& r);
+void dfa(int state, vector<char>::iterator begin, vector<char>::iterator end, DfaResult* r, char_iterator lastFloat);
 void generateString(int length);
 void printString(vector<char>* string);
 void process(vector<iterator_tuple> tasks);
 vector<iterator_tuple> divide(int threads);
-void printTasks(vector<iterator_tuple> v);
-vector<vector<char>> match(vector<char> s, char_iterator start, char_iterator end);
 void deleteAll(char_iterator from, char_iterator to);
 
-vector<char>::iterator lastFloat;
 char generator[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.', 'x'};
 
 vector<char> *myString;
+
 regex oneToNine = regex("[1-9]");
 regex zeroToNine = regex("[0-9]");
 
@@ -40,9 +40,10 @@ class DfaResult {
 public:
     int state;
     vector<function<void()>> functions;
+    char_iterator lastFloat;
 
     void addDelete(char_iterator from, char_iterator to) {
-        function<void()> func = [from, to]() -> void {
+        function<void()> func = [=]() -> void {
             deleteAll(from, to);
         };
         functions.push_back(func);
@@ -70,27 +71,36 @@ public:
 };
 
 
-int main() {
+int main(int argc, char *argv[]) {
 
-    srand((unsigned)time(0));
-    int threads = 1;
-    int stringLength = 50;
+    if (argc != 3) {
+        cout << "Usage : FloatParser n l" << endl;;
+        cout << endl;
+        cout << "n: number of optimistic threads" << endl;
+        cout << "l: length of the random string" << endl;
+        cout << endl;
+        return EXIT_FAILURE;
+    }
 
-    assert(stringLength > (threads+1));
+    srand((unsigned)time(0)); // seed
 
-    omp_set_num_threads(threads);
-    char predef[] = {'7', '.', '4', '8', 'x', '0', '0', '.', '0', '5', 'x', '4', '0', '8', '3', '1', '8', 'x', '7', '9', '1', '0', '4', '8', '.', '6', '1' ,'4','.'};
-    myString = new vector<char>(predef, predef+29);
-    //generateString(stringLength);
-    printString(myString);
-    lastFloat = myString->begin();
+    int threads = atoi(argv[1]);
+    int stringLength = atoi(argv[2]);
 
-    vector<iterator_tuple> v = divide(threads+1);
+    assert(stringLength >= (threads+1));
 
-    process(v);
-    printString(myString);
-    //printTasks(v);
+    omp_set_num_threads(threads); // setting max number of threads
+    myString = new vector<char>(); // string holder
 
+    generateString(stringLength); // generate random string
+    //printString(myString); // print original string
+    vector<iterator_tuple> tasks = divide(threads+1); // generate tasks
+    double start = omp_get_wtime();
+    process(tasks);
+    double stop = omp_get_wtime();
+    //printString(myString);
+    printf("Time taken: %.2fs\n", stop-start);
+    return EXIT_SUCCESS;
 }
 
 
@@ -101,6 +111,10 @@ void printString(vector<char>* string) {
     cout << endl;
 }
 
+/**
+ * Generate a random string
+ * @param length length of the string
+ */
 void generateString(int length) {
     for (int i = 0; i <length; i++) {
         char c = generator[rand() % GEN_SIZE];
@@ -109,87 +123,87 @@ void generateString(int length) {
 }
 
 
-DfaResult dfa(int state, vector<char>::iterator begin, vector<char>::iterator end, DfaResult& r) {
+/**
+ * Dfa to check reg exp.
+ * @param state start state
+ * @param begin start position
+ * @param end  end position
+ * @param r result pointer
+ * @param lastFloat position of last known float
+ */
+void dfa(int state, vector<char>::iterator begin, vector<char>::iterator end, DfaResult* r, char_iterator lastFloat) {
 
-    auto l = lastFloat;
-
-    if (begin > myString->end()) {
-        r.state = state;
-        //r.addDelete(lastFloat, begin);
-        return r;
-    }
+    r->state = state;
+    r->lastFloat = lastFloat;
 
     if (begin > end) {
-        r.state = state;
-        return r;
+        return;
     }
 
     switch (state) {
         case 0:
             if (regex_match(string(1,*begin), oneToNine))
-                return dfa(2, begin+1, end, r);
+                return dfa(2, begin+1, end, r, lastFloat);
             else if (*begin == '0')
-                return dfa(1, begin+1, end, r);
+                return dfa(1, begin+1, end, r, lastFloat);
             else {
-                r.addDelete(lastFloat, begin);
-                return dfa(0, begin+1, end, r);
-                }
+                r->addDelete(lastFloat+1, begin);
+                return dfa(0, begin+1, end, r, lastFloat);
+            }
         case 1:
             if (*begin == '.')
-                return dfa(3, begin+1, end, r);
+                return dfa(3, begin+1, end, r, lastFloat);
             else {
-                r.addDelete(lastFloat, begin);
-                return dfa(0, begin, end, r);
+                r->addDelete(lastFloat+1, begin);
+                return dfa(0, begin+1, end, r, lastFloat);
             }
         case 2:
             if (regex_match(string(1,*begin), zeroToNine))
-                return dfa(2, begin+1, end, r);
+                return dfa(2, begin+1, end, r, lastFloat);
             else if (*begin == '.')
-                return dfa(3, begin+1, end, r);
+                return dfa(3, begin+1, end, r, lastFloat);
             else {
-                r.addDelete(lastFloat, begin);
-                return dfa(0, begin, end, r);
+                r->addDelete(lastFloat+1, begin);
+                return dfa(0, begin+1, end, r, lastFloat);
             }
         case 3:
-            if (regex_match(string(1,*begin), zeroToNine))
-                return dfa(4, begin+1, end, r);
+            if (regex_match(string(1,*begin), zeroToNine)) {
+                return dfa(4, begin + 1, end, r, lastFloat);
+            }
             else {
-                r.addDelete(lastFloat, begin);
-                return dfa(0, begin, end, r);
+                r->addDelete(lastFloat+1, begin);
+                return dfa(0, begin+1, end, r, lastFloat);
             }
         case 4:
-            lastFloat = begin;
             if (regex_match(string(1,*begin), zeroToNine)) {
-                return dfa(4, begin + 1, end, r);
+                lastFloat = begin;
+                return dfa(4, begin + 1, end, r, lastFloat);
             }
             else {
-                r.addDelete(lastFloat, begin);
-                return dfa(0, begin + 1, end, r);
+                r->addDelete(lastFloat+1, begin);
+                return dfa(0, begin+1, end, r, lastFloat);
             }
-        default:
-            return DfaResult();
-    }
 
+
+    }
 }
 
+/**
+ * Replace all characters in range
+ * @param from inclusive start iterator
+ * @param to inclusive end iterator
+ */
 void deleteAll(char_iterator from, char_iterator to) {
-    for (auto it = from; it < to; ++it) {
+    for (auto it = from; it <= to; it++) {
         *it = ' ';
     }
 }
 
-
-
-void printTasks(vector<iterator_tuple> v) {
-
-    for (vector<iterator_tuple>::iterator i = v.begin(); i != v.end(); ++i) {
-        for (auto j = get<0>(*i); j != get<1>(*i); ++j) {
-            cout << *j << " ";
-        }
-    }
-    cout << endl;
-}
-
+/**
+ * Divide string into multiple tasks
+ * @param threads
+ * @return tuple of a start iterator and end iterator
+ */
 vector<iterator_tuple> divide(int threads) {
     vector<iterator_tuple> v = vector<iterator_tuple>();
     int size = myString->size() / threads;
@@ -210,34 +224,34 @@ void process(vector<iterator_tuple> tasks) {
     #pragma omp parallel
     {
 
-        #pragma omp master
+        #pragma omp single
         {
 
-            dfa(0, get<0>(*tasks.begin()), get<1>(*tasks.begin()), result);
-            result.exec();
+            dfa(0, get<0>(*tasks.begin()), get<1>(*tasks.begin()), &result, myString->begin()-1); // start first thread
 
         }
         #pragma omp parallel for schedule(static, 1) collapse(1)
-        for (int i = 1; i < tasks.size(); ++i) {
+        for (uint i = 1; i < tasks.size(); i++) { // start all other threads, they match on their task starting from all possible dfa state
             {
                 for (int j = 0; j < 5; j++) {
-                    auto startIterator = get<0>(*(tasks.begin() + i));
-                    auto endIterator = get<1>(*(tasks.begin() + i));
+                    auto startIterator = get<0>(tasks[i]);
+                    auto endIterator = get<1>(tasks[i]);
                     DfaResult r = DfaResult();
-                    dfa(j, startIterator, endIterator, r);
+                    dfa(j, startIterator, endIterator, &r, myString->end());
                     compounds[i - 1].addResult(j, r);
                 }
             }
         }
 
-        #pragma omp barrier
     }
+    #pragma omp barrier
 
+    result.exec(); // remove non float from first task.
     int lastState = result.state;
     for (auto compound: compounds) {
-        auto resultFromState = compound.results[lastState];
-        resultFromState.exec();
-        lastState = resultFromState.state;
+        auto resultFromState = compound.results[lastState]; // select the right starting state
+        resultFromState.exec(); // remove non float in string
+        lastState = resultFromState.state; // update state for next task
     }
 
 
